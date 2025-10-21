@@ -26,9 +26,5 @@ A **Tampermonkey** script to automatically select your preferred Mistral AI agen
 - **Max Attempts**: Number of retry attempts.
 - **Delays**: Adjust timings for menu interaction.
 
-## Auto-Update
-The script checks for updates on GitHub by default.
-- To disable, set `autoUpdateEnabled` to `false` in the script (line ~20).
-
 ## License
 MIT License.
