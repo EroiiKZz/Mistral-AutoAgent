@@ -44,57 +44,49 @@
     let settings = {};
     for (const key of Object.keys(defaultSettings)) {
         let stored = await GM.getValue(key, defaultSettings[key]);
-        if (typeof stored === 'string' && (key === 'availableAgents' || key === 'language')) {
+        if (key === 'availableAgents' && typeof stored === 'string') {
             try {
                 stored = JSON.parse(stored);
             } catch {
                 stored = defaultSettings[key];
             }
         }
+        // Correction pour 'language'
+        if (key === 'language') {
+            if (typeof stored !== 'string' || !['fr', 'en'].includes(stored)) {
+                stored = defaultSettings[key];
+                await GM.setValue(key, stored); // Réinitialise si invalide
+            }
+        }
         settings[key] = stored;
     }
 
+
     // Load language file using GM.xmlHttpRequest
-    async function loadLanguageFile(lang) {
+    async function loadLanguageFile(langCode) {
+        const url = langCode === 'fr'
+            ? "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/fr.json"
+            : "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json";
         return new Promise((resolve) => {
             GM.xmlHttpRequest({
                 method: "GET",
-                url: lang === 'fr'
-                    ? "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/fr.json"
-                    : "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json",
-                onload: function (response) {
+                url: url,
+                onload: (response) => {
                     try {
                         resolve(JSON.parse(response.responseText));
-                    } catch (e) {
+                    } catch {
                         console.error('Failed to parse language file, falling back to English.');
-                        GM.xmlHttpRequest({
-                            method: "GET",
-                            url: "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json",
-                            onload: function (fallbackResponse) {
-                                resolve(JSON.parse(fallbackResponse.responseText));
-                            },
-                            onerror: function () {
-                                resolve({}); // Fallback vide si tout échoue
-                            }
-                        });
+                        resolve({}); // Retourne un objet vide en cas d'échec
                     }
                 },
-                onerror: function () {
+                onerror: () => {
                     console.error('Failed to load language file, falling back to English.');
-                    GM.xmlHttpRequest({
-                        method: "GET",
-                        url: "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json",
-                        onload: function (fallbackResponse) {
-                            resolve(JSON.parse(fallbackResponse.responseText));
-                        },
-                        onerror: function () {
-                            resolve({}); // Fallback vide si tout échoue
-                        }
-                    });
+                    resolve({});
                 }
             });
         });
     }
+
 
     // Load CSS using GM.xmlHttpRequest
     async function loadCSS() {
@@ -218,32 +210,24 @@
     // Save settings
     async function saveSettings(newSettings) {
         const languageChanged = newSettings.language && newSettings.language !== settings.language;
-
         for (const [key, value] of Object.entries(newSettings)) {
-            await GM.setValue(key, typeof value === 'object' ? JSON.stringify(value) : value);
+            await GM.setValue(key, value); // Pas de JSON.stringify pour les chaînes
         }
-
         Object.assign(settings, newSettings);
 
-        // Recharger le fichier de langue si nécessaire
         if (languageChanged) {
             lang = await loadLanguageFile(settings.language);
             showBanner(lang.settingsSaved || 'Settings saved!', 'success');
-            // Optionnel : recharger la popup pour appliquer la nouvelle langue
-            closePopup();
-            setTimeout(() => openSettingsPopup(), 500);
+            // Fermer et rouvrir la popup pour appliquer la langue
+            if (document.getElementById('mistralSettingsPopup')) {
+                closePopup();
+                setTimeout(openSettingsPopup, 100);
+            }
         } else {
             showBanner(lang.settingsSaved || 'Settings saved!', 'success');
         }
-
-        if (!settings.agentName || settings.agentName.trim() === "") {
-            if (settings.showNoAgentBanner) {
-                showBanner("", "no-agent");
-            }
-        }
-
-        logDebug('Settings saved: ' + JSON.stringify(newSettings));
     }
+
 
     // Close popup
     function closePopup() {
