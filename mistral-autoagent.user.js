@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Mistral AI - AutoAgent (Enhanced Version)
 // @namespace    http://tampermonkey.net/
-// @version      4.2
+// @version      4.3
 // @description  Automatically selects and manages Mistral AI agents with smart re-selection logic
-// @author       EroiiKZz (enhanced by Nexus)
-// @match        https://chat.mistral.ai/chat
+// @author       EroiiKZz
+// @match        https://chat.mistral.ai/chat*
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
@@ -296,43 +296,68 @@
                 logDebug("Agent list already loaded.");
                 return;
             }
+
             const noAgentBanner = document.getElementById('mistralAgentBanner.no-agent');
             if (noAgentBanner) {
                 logDebug("No-agent banner displayed, skipping automatic detection.");
                 return;
             }
+
+            // 1. Ouvrir le menu
             const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]', 10000);
+            if (!btn) {
+                logDebug("Select agent button not found.");
+                return;
+            }
             forceClick(btn);
+
+            // 2. Attendre que le menu s'ouvre
             await new Promise(r => setTimeout(r, settings.menuOpenDelay));
 
             let menu = null;
             let tries = 0;
-            while (tries < 5 && !menu) {
+            while (tries < settings.menuCheckMaxTries && !menu) {
                 menu = findAgentMenu();
                 if (menu) break;
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, settings.menuCheckInterval));
                 tries++;
             }
 
-            if (menu) {
-                const items = menu.querySelectorAll('[cmdk-item], [role="option"], [role="menuitem"]');
-                const agents = Array.from(items)
-                    .map(item => getCleanAgentName(item))
-                    .filter(name => name && !name.toLowerCase().includes('select') && !name.toLowerCase().includes('choisir'));
+            if (!menu) {
+                logDebug("Agent menu not found.");
+                return;
+            }
+
+            // 3. Récupérer la liste des agents
+            const items = menu.querySelectorAll('[cmdk-item], [role="option"], [role="menuitem"]');
+            const agents = Array.from(items)
+                .map(item => getCleanAgentName(item))
+                .filter(name => name && !name.toLowerCase().includes('select') && !name.toLowerCase().includes('choisir'));
+
+            if (agents.length > 0) {
                 availableAgents = [...new Set(agents)];
                 settings.availableAgents = availableAgents;
                 await GM.setValue('availableAgents', JSON.stringify(availableAgents));
-                if (availableAgents.length > 0) {
-                    logDebug(`Detected agents: ${availableAgents.join(', ')}`);
-                }
+                logDebug(`Detected agents: ${availableAgents.join(', ')}`);
             }
+
+            // 4. Refermer le menu immédiatement
+            forceClick(btn);
+            logDebug("Agent menu closed after detection.");
         } catch (e) {
             logDebug(`Failed to detect agents: ${e.message}`);
-        } finally {
-            const btn = document.querySelector('button[aria-label="Select agent"], button[aria-label="Choose agent"]');
-            if (btn) forceClick(btn);
         }
-    }
+
+        const style = document.createElement('style');
+        style.textContent = `
+            [cmdk-portal], [role="menu"] {
+                display: none !important;
+            }
+        `;
+                document.head.appendChild(style);
+                style.remove();
+            }
+
 
     // Open settings popup
     function openSettingsPopup() {
@@ -470,7 +495,6 @@
             await saveSettings(newSettings);
             showBanner(`"${newAgentName || lang.noAgentOption || 'No agent'}" ${lang.agentConfiguredMessage || 'configured for next chats.'}`, 'success');
             closePopup();
-            window.location.reload();
         });
     }
 
@@ -557,9 +581,18 @@
             logDebug('No agent configured.');
             return;
         }
+
+        const chatMessages = document.querySelectorAll('[data-testid="chat-message"]');
+        const isChatActive = chatMessages.length > 0;
+
+        if (isChatActive) {
+            logDebug('Chat already active. Skipping agent selection for this chat.');
+            return;
+        }
+
         selectionInProgress = true;
         try {
-            const btn = await waitFor('button[aria-label="Select agent"]');
+            const btn = await waitFor('button[aria-label="Select agent"]', 10000);
             if (!btn) throw new Error('Button not found.');
             forceClick(btn);
             await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
@@ -597,6 +630,7 @@
         }
     }
 
+
     // Select agent
     async function selectAgent(attempt = 1) {
         if (selectionInProgress) return;
@@ -604,74 +638,70 @@
             logDebug('No agent defined, skipping automatic selection.');
             return;
         }
+
+        // Vérifie si un chat est déjà actif (par exemple, s'il y a des messages)
+        const chatMessages = document.querySelectorAll('[data-testid="chat-message"]');
+        const isChatActive = chatMessages.length > 0;
+
         const currentAgent = getCurrentlySelectedAgent();
         if (!currentAgent) {
             logDebug("New chat detected, selecting configured agent...");
             await attemptAgentSelection(attempt);
+        } else if (currentAgent !== settings.agentName && !isChatActive) {
+            // Ne change l'agent que si aucun message n'a été envoyé dans ce chat
+            logDebug(`No active chat, updating agent to "${settings.agentName}" for next chats.`);
+            selectionInProgress = true;
+            try {
+                const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]', 10000);
+                if (!btn) throw new Error('Select agent button not found.');
+                forceClick(btn);
+                await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
+
+                let menu = null;
+                let tries = 0;
+                while (tries < settings.menuCheckMaxTries && !menu) {
+                    menu = findAgentMenu();
+                    if (menu) break;
+                    await new Promise(resolve => setTimeout(resolve, settings.menuCheckInterval));
+                    tries++;
+                }
+                if (!menu) throw new Error('Agent menu not found.');
+
+                const agentItem = findAgentInMenu(menu);
+                if (!agentItem) {
+                    const availableAgentsList = Array.from(menu.querySelectorAll('[cmdk-item], [role="option"], [role="menuitem"]'))
+                        .map(it => getCleanAgentName(it))
+                        .filter(name => name);
+                    throw new Error(`Agent "${settings.agentName}" not found. Available: ${availableAgentsList.join(', ')}`);
+                }
+                forceClick(agentItem);
+                const cleanName = getCleanAgentName(agentItem);
+                settings.agentName = cleanName;
+                await GM.setValue('agentName', cleanName);
+                logDebug(`Agent updated to "${cleanName}" for next chats.`);
+                showBanner(`"${settings.agentName}" ${lang.agentSelectedSuccessfully || 'selected successfully for next chats!'}`, 'success');
+            } catch (e) {
+                logDebug(`Attempt ${attempt} failed: ${e.message}`);
+                if (attempt < settings.maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, settings.attemptDelay));
+                    await selectAgent(attempt + 1);
+                } else {
+                    showBanner(`${lang.failedAfterAttempts || 'Failed after'} ${settings.maxAttempts}: ${e.message}`, 'error');
+                }
+            } finally {
+                selectionInProgress = false;
+            }
         } else {
-            logDebug(`Agent "${currentAgent}" already selected. Configuration saved for next chats.`);
+            logDebug(`Chat already active with agent "${currentAgent}". Agent will be updated for next chats only.`);
             selectionDone = true;
-        }
-        if (currentAgent && currentAgent !== settings.agentName) {
-            logDebug(`Current agent "${currentAgent}" differs from "${settings.agentName}". Changing now...`);
-            selectionDone = false;
-        }
-        selectionInProgress = true;
-        try {
-            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.searchingButton || 'Searching for button'}...`, 'waiting');
-            const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]');
-            if (!btn) throw new Error('Select agent button not found.');
-            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.openingMenu || 'Opening menu'}...`, 'waiting');
-            forceClick(btn);
-            await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
-
-            let menu = null;
-            let tries = 0;
-            while (tries < settings.menuCheckMaxTries && !menu) {
-                menu = findAgentMenu();
-                if (menu) break;
-                await new Promise(resolve => setTimeout(resolve, settings.menuCheckInterval));
-                if (tries === 3) forceClick(btn);
-                tries++;
-            }
-            if (!menu) throw new Error('Agent menu not found.');
-
-            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.searchingAgent || 'Searching for'} "${settings.agentName}"...`, 'waiting');
-            await new Promise(resolve => setTimeout(resolve, settings.preSelectionDelay));
-
-            const agentItem = findAgentInMenu(menu);
-            if (!agentItem) {
-                const items = menu.querySelectorAll('[cmdk-item], [role="option"], [role="menuitem"]');
-                const availableAgentsList = Array.from(items)
-                    .map(it => getCleanAgentName(it))
-                    .filter(name => name);
-                throw new Error(`Agent "${settings.agentName}" not found. Available agents: ${availableAgentsList.join(', ')}`);
-            }
-            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.selectingAgent || 'Selecting'} "${settings.agentName}"...`, 'waiting');
-            forceClick(agentItem);
-
-            const cleanName = getCleanAgentName(agentItem);
-            settings.agentName = cleanName;
-            await GM.setValue('agentName', cleanName);
-            logDebug(`Agent saved: ${cleanName}`);
-            selectionDone = true;
-            showBanner(`"${settings.agentName}" ${lang.agentSelectedSuccessfully || 'selected successfully!'}!`, 'success');
-        } catch (e) {
-            selectionInProgress = false;
-            logDebug(`Attempt ${attempt} failed: ${e.message}`);
-            if (attempt < settings.maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, settings.attemptDelay));
-                await selectAgent(attempt + 1);
-            } else {
-                showBanner(`${lang.failedAfterAttempts || 'Failed after'} ${settings.maxAttempts}: ${e.message}`, 'error');
-            }
         }
     }
+
 
     // Start script
     function start() {
         addSettingsButton();
-        setTimeout(detectAvailableAgents, 2000);
+        setTimeout(detectAvailableAgents, 500);
         if (!settings.agentName || settings.agentName.trim() === "") {
             if (settings.showNoAgentBanner) {
                 showBanner("", "no-agent");
@@ -726,9 +756,15 @@
                         if (newCurrentAgent &&
                             !newCurrentAgent.toLowerCase().includes('select agent') &&
                             newCurrentAgent !== settings.agentName) {
-                            logDebug(`Manual agent change detected: "${newCurrentAgent}". Updating config for next chats.`);
-                            settings.agentName = newCurrentAgent;
-                            GM.setValue('agentName', newCurrentAgent);
+                            const chatMessages = document.querySelectorAll('[data-testid="chat-message"]');
+                            const isChatActive = chatMessages.length > 0;
+                            if (!isChatActive) {
+                                logDebug(`Manual agent change detected: "${newCurrentAgent}". Updating config for next chats.`);
+                                settings.agentName = newCurrentAgent;
+                                GM.setValue('agentName', newCurrentAgent);
+                            } else {
+                                logDebug(`Chat is active. Agent change will apply to next chats only.`);
+                            }
                         }
                     }
                 }
