@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mistral AI - AutoAgent (Enhanced Version)
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.2
 // @description  Automatically selects and manages Mistral AI agents with smart re-selection logic
 // @author       EroiiKZz (enhanced by Nexus)
 // @match        https://chat.mistral.ai/chat
@@ -11,12 +11,9 @@
 // @grant        GM.addStyle
 // @grant        GM.deleteValue
 // @grant        GM.xmlHttpRequest
-// @connect      chat.mistral.ai
-// @connect      api.github.com
 // @connect      raw.githubusercontent.com
-// @resource     STYLES_URL https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/styles.css
-// @resource     LANG_FR https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/fr.json
-// @resource     LANG_EN https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json
+// @connect      api.github.com
+// @connect      chat.mistral.ai
 // @updateURL    https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js
 // @downloadURL  https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js
 // ==/UserScript==
@@ -29,10 +26,10 @@
         agentName: '',
         maxAttempts: 3,
         attemptDelay: 500,
-        initialDelay: 500,
+        initialDelay: 200,
         menuCheckInterval: 300,
         menuCheckMaxTries: 5,
-        menuOpenDelay: 800,
+        menuOpenDelay: 400,
         preSelectionDelay: 500,
         debugMode: false,
         showBanners: true,
@@ -40,7 +37,7 @@
         bannerDuration: 3000,
         firstRun: true,
         availableAgents: [],
-        language: 'fr'
+        language: 'en'
     };
 
     // Load settings asynchronously
@@ -57,20 +54,69 @@
         settings[key] = stored;
     }
 
-    // Load language file
-    let lang = {};
-    try {
-        const langResource = await GM.getResource(settings.language === 'fr' ? 'LANG_FR' : 'LANG_EN');
-        lang = JSON.parse(langResource);
-    } catch (e) {
-        console.error('Failed to load language file, falling back to English.');
-        const fallbackLangResource = await GM.getResource('LANG_EN');
-        lang = JSON.parse(fallbackLangResource);
+    // Load language file using GM.xmlHttpRequest
+    async function loadLanguageFile(lang) {
+        return new Promise((resolve) => {
+            GM.xmlHttpRequest({
+                method: "GET",
+                url: lang === 'fr'
+                    ? "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/fr.json"
+                    : "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json",
+                onload: function (response) {
+                    try {
+                        resolve(JSON.parse(response.responseText));
+                    } catch (e) {
+                        console.error('Failed to parse language file, falling back to English.');
+                        GM.xmlHttpRequest({
+                            method: "GET",
+                            url: "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json",
+                            onload: function (fallbackResponse) {
+                                resolve(JSON.parse(fallbackResponse.responseText));
+                            },
+                            onerror: function () {
+                                resolve({}); // Fallback vide si tout échoue
+                            }
+                        });
+                    }
+                },
+                onerror: function () {
+                    console.error('Failed to load language file, falling back to English.');
+                    GM.xmlHttpRequest({
+                        method: "GET",
+                        url: "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json",
+                        onload: function (fallbackResponse) {
+                            resolve(JSON.parse(fallbackResponse.responseText));
+                        },
+                        onerror: function () {
+                            resolve({}); // Fallback vide si tout échoue
+                        }
+                    });
+                }
+            });
+        });
     }
 
-    // Load CSS
-    const styles = await GM.getResourceText('STYLES_URL');
-    GM.addStyle(styles);
+    // Load CSS using GM.xmlHttpRequest
+    async function loadCSS() {
+        return new Promise((resolve) => {
+            GM.xmlHttpRequest({
+                method: "GET",
+                url: "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/style.css",
+                onload: function (response) {
+                    GM.addStyle(response.responseText);
+                    resolve();
+                },
+                onerror: function () {
+                    console.error('Failed to load CSS.');
+                    resolve(); // Continue même sans CSS
+                }
+            });
+        });
+    }
+
+    // Charge les ressources
+    let lang = await loadLanguageFile(settings.language);
+    await loadCSS();
 
     // State variables
     let selectionDone = false;
@@ -99,13 +145,13 @@
 
         if (type === 'no-agent') {
             banner.innerHTML = `
-                <div>${lang.noAgentSelected}</div>
-                <div style="font-size: 0.875rem; margin-top: 0.25rem;">${lang.selectAgentPrompt}</div>
+                <div>${lang.noAgentSelected || 'No default agent selected'}</div>
+                <div style="font-size: 0.875rem; margin-top: 0.25rem;">${lang.selectAgentPrompt || 'Would you like to select one now?'}</div>
                 <div class="banner-buttons">
-                    <button class="yes-btn" id="selectAgentYes">${lang.yes}</button>
-                    <button class="no-btn" id="selectAgentNo">${lang.no}</button>
+                    <button class="yes-btn" id="selectAgentYes">${lang.yes || 'Yes'}</button>
+                    <button class="no-btn" id="selectAgentNo">${lang.no || 'No'}</button>
                 </div>
-                <div class="disable-banner" id="disableNoAgentBanner">${lang.disableBanner}</div>
+                <div class="disable-banner" id="disableNoAgentBanner">${lang.disableBanner || 'Do not show this banner again'}</div>
             `;
         } else {
             banner.textContent = message;
@@ -119,14 +165,14 @@
         document.body.prepend(banner);
 
         if (type === 'no-agent') {
-            document.getElementById('selectAgentYes').addEventListener('click', () => {
+            document.getElementById('selectAgentYes')?.addEventListener('click', () => {
                 banner.remove();
                 openSettingsPopup();
             });
-            document.getElementById('selectAgentNo').addEventListener('click', () => {
+            document.getElementById('selectAgentNo')?.addEventListener('click', () => {
                 banner.remove();
             });
-            document.getElementById('disableNoAgentBanner').addEventListener('click', async () => {
+            document.getElementById('disableNoAgentBanner')?.addEventListener('click', async () => {
                 settings.showNoAgentBanner = false;
                 await GM.setValue('showNoAgentBanner', false);
                 banner.remove();
@@ -147,7 +193,7 @@
                 const settingsButton = document.createElement('button');
                 settingsButton.type = 'button';
                 settingsButton.id = 'mistralSettingsButton';
-                settingsButton.setAttribute('aria-label', lang.settingsAriaLabel);
+                settingsButton.setAttribute('aria-label', lang.settingsAriaLabel || 'Open Mistral AutoAgent settings');
                 settingsButton.className = 'flex items-center justify-center rounded-full border border-default bg-state-brand p-1 text-muted shadow-xl transition-colors hover:bg-muted focus-visible:outline-hidden dark:border-transparent';
                 settingsButton.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings size-4" aria-hidden="true">
@@ -175,13 +221,12 @@
             await GM.setValue(key, typeof value === 'object' ? JSON.stringify(value) : value);
         }
         Object.assign(settings, newSettings);
-
         if (!settings.agentName || settings.agentName.trim() === "") {
             if (settings.showNoAgentBanner) {
                 showBanner("", "no-agent");
             }
         }
-        showBanner(lang.settingsSaved, 'success');
+        showBanner(lang.settingsSaved || 'Settings saved!', 'success');
         logDebug('Settings saved: ' + JSON.stringify(newSettings));
     }
 
@@ -195,10 +240,8 @@
     function getCleanAgentName(element) {
         const nameDiv = element.querySelector('div[class*="text-default"], div[class*="font-medium"], div[class*="text-sm"]');
         if (nameDiv) return nameDiv.textContent.trim();
-
         const firstDiv = element.querySelector('div');
         if (firstDiv) return firstDiv.textContent.trim().split('\n')[0].trim();
-
         return element.textContent.trim().split('\n')[0].trim();
     }
 
@@ -233,7 +276,6 @@
     // Find agent in menu
     function findAgentInMenu(menu) {
         if (!menu) return null;
-
         const selectors = ['[cmdk-item]', '[role="option"]', '[role="menuitem"]', 'div[tabindex="-1"]', 'button', 'li'];
         for (const selector of selectors) {
             const items = menu.querySelectorAll(selector);
@@ -254,13 +296,11 @@
                 logDebug("Agent list already loaded.");
                 return;
             }
-
             const noAgentBanner = document.getElementById('mistralAgentBanner.no-agent');
             if (noAgentBanner) {
                 logDebug("No-agent banner displayed, skipping automatic detection.");
                 return;
             }
-
             const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]', 10000);
             forceClick(btn);
             await new Promise(r => setTimeout(r, settings.menuOpenDelay));
@@ -279,11 +319,9 @@
                 const agents = Array.from(items)
                     .map(item => getCleanAgentName(item))
                     .filter(name => name && !name.toLowerCase().includes('select') && !name.toLowerCase().includes('choisir'));
-
                 availableAgents = [...new Set(agents)];
                 settings.availableAgents = availableAgents;
                 await GM.setValue('availableAgents', JSON.stringify(availableAgents));
-
                 if (availableAgents.length > 0) {
                     logDebug(`Detected agents: ${availableAgents.join(', ')}`);
                 }
@@ -300,7 +338,6 @@
     function openSettingsPopup() {
         const existingPopup = document.getElementById('mistralSettingsPopup');
         if (existingPopup) existingPopup.remove();
-
         const existingOverlay = document.querySelector('.popup-overlay');
         if (existingOverlay) existingOverlay.remove();
 
@@ -313,15 +350,15 @@
         popup.id = 'mistralSettingsPopup';
         popup.innerHTML = `
             <div class="popup-header">
-                <h2>${lang.settingsTitle}</h2>
+                <h2>${lang.settingsTitle || 'Mistral AI Agent Settings'}</h2>
                 <button class="close-btn" id="closePopupBtn">×</button>
             </div>
             <div class="popup-body">
                 <div class="section">
                     <div class="section-content full-width">
-                        <label for="agentName">${lang.agentNameLabel}</label>
+                        <label for="agentName">${lang.agentNameLabel || 'Agent Name'}</label>
                         <select id="agentName">
-                            <option value="" ${!settings.agentName ? 'selected' : ''}>${lang.noAgentOption}</option>
+                            <option value="" ${!settings.agentName ? 'selected' : ''}>${lang.noAgentOption || 'No agent'}</option>
                             ${availableAgents.map(agent => `
                                 <option value="${agent}" ${settings.agentName === agent ? 'selected' : ''}>${agent}</option>
                             `).join('')}
@@ -330,60 +367,60 @@
                 </div>
                 <div class="section">
                     <div class="section-header">
-                        <h3>${lang.timingsSection}</h3>
+                        <h3>${lang.timingsSection || 'Timings'}</h3>
                         <span class="chevron">▼</span>
                     </div>
                     <div class="section-content">
                         <div>
-                            <label for="maxAttempts">${lang.maxAttemptsLabel}</label>
+                            <label for="maxAttempts">${lang.maxAttemptsLabel || 'Max Attempts'}</label>
                             <input type="number" id="maxAttempts" value="${settings.maxAttempts}" min="1" max="10">
                         </div>
                         <div>
-                            <label for="attemptDelay">${lang.attemptDelayLabel}</label>
+                            <label for="attemptDelay">${lang.attemptDelayLabel || 'Delay Between Attempts (ms)'}</label>
                             <input type="number" id="attemptDelay" value="${settings.attemptDelay}" min="100" max="10000">
                         </div>
                         <div>
-                            <label for="initialDelay">${lang.initialDelayLabel}</label>
+                            <label for="initialDelay">${lang.initialDelayLabel || 'Initial Delay (ms)'}</label>
                             <input type="number" id="initialDelay" value="${settings.initialDelay}" min="100" max="10000">
                         </div>
                         <div>
-                            <label for="menuCheckInterval">${lang.menuCheckIntervalLabel}</label>
+                            <label for="menuCheckInterval">${lang.menuCheckIntervalLabel || 'Check Interval (ms)'}</label>
                             <input type="number" id="menuCheckInterval" value="${settings.menuCheckInterval}" min="50" max="5000">
                         </div>
                         <div>
-                            <label for="menuCheckMaxTries">${lang.menuCheckMaxTriesLabel}</label>
+                            <label for="menuCheckMaxTries">${lang.menuCheckMaxTriesLabel || 'Max Menu Check Attempts'}</label>
                             <input type="number" id="menuCheckMaxTries" value="${settings.menuCheckMaxTries}" min="1" max="50">
                         </div>
                         <div>
-                            <label for="menuOpenDelay">${lang.menuOpenDelayLabel}</label>
+                            <label for="menuOpenDelay">${lang.menuOpenDelayLabel || 'Menu Open Delay (ms)'}</label>
                             <input type="number" id="menuOpenDelay" value="${settings.menuOpenDelay}" min="100" max="5000">
                         </div>
                         <div>
-                            <label for="preSelectionDelay">${lang.preSelectionDelayLabel}</label>
+                            <label for="preSelectionDelay">${lang.preSelectionDelayLabel || 'Pre-Selection Delay (ms)'}</label>
                             <input type="number" id="preSelectionDelay" value="${settings.preSelectionDelay}" min="50" max="5000">
                         </div>
                     </div>
                 </div>
                 <div class="section">
                     <div class="section-header">
-                        <h3>${lang.generalSection}</h3>
+                        <h3>${lang.generalSection || 'General'}</h3>
                         <span class="chevron">▼</span>
                     </div>
                     <div class="section-content">
                         <div class="checkbox-container full-width">
                             <input type="checkbox" id="showBanners" ${settings.showBanners ? 'checked' : ''}>
-                            <label for="showBanners">${lang.showBannersLabel}</label>
+                            <label for="showBanners">${lang.showBannersLabel || 'Show Banners'}</label>
                         </div>
                         <div class="checkbox-container full-width">
                             <input type="checkbox" id="debugMode" ${settings.debugMode ? 'checked' : ''}>
-                            <label for="debugMode">${lang.debugModeLabel}</label>
+                            <label for="debugMode">${lang.debugModeLabel || 'Debug Mode'}</label>
                         </div>
                         <div class="checkbox-container full-width">
                             <input type="checkbox" id="showNoAgentBanner" ${settings.showNoAgentBanner ? 'checked' : ''}>
-                            <label for="showNoAgentBanner">${lang.showNoAgentBannerLabel}</label>
+                            <label for="showNoAgentBanner">${lang.showNoAgentBannerLabel || 'Show "No Agent Selected" Banner'}</label>
                         </div>
                         <div class="full-width">
-                            <label for="language">${lang.languageLabel}</label>
+                            <label for="language">${lang.languageLabel || 'Language'}</label>
                             <select id="language">
                                 <option value="fr" ${settings.language === 'fr' ? 'selected' : ''}>Français</option>
                                 <option value="en" ${settings.language === 'en' ? 'selected' : ''}>English</option>
@@ -393,10 +430,11 @@
                 </div>
             </div>
             <div class="popup-footer">
-                <button class="cancel-btn" id="cancelSettingsBtn">${lang.cancelButton}</button>
-                <button class="save-btn" id="saveSettingsBtn">${lang.saveButton}</button>
+                <button class="cancel-btn" id="cancelSettingsBtn">${lang.cancelButton || 'Cancel'}</button>
+                <button class="save-btn" id="saveSettingsBtn">${lang.saveButton || 'Save'}</button>
             </div>
         `;
+
         document.body.appendChild(popup);
 
         // Toggle sections
@@ -408,13 +446,11 @@
             });
         });
 
-        document.getElementById('closePopupBtn').addEventListener('click', closePopup);
-        document.getElementById('cancelSettingsBtn').addEventListener('click', closePopup);
-
-        document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+        document.getElementById('closePopupBtn')?.addEventListener('click', closePopup);
+        document.getElementById('cancelSettingsBtn')?.addEventListener('click', closePopup);
+        document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
             const newAgentName = document.getElementById('agentName').value.trim();
             const newLanguage = document.getElementById('language').value;
-
             const newSettings = {
                 agentName: newAgentName,
                 maxAttempts: Math.max(1, Math.min(10, parseInt(document.getElementById('maxAttempts').value) || defaultSettings.maxAttempts)),
@@ -431,12 +467,9 @@
                 firstRun: false,
                 availableAgents: availableAgents
             };
-
             await saveSettings(newSettings);
-            showBanner(`"${newAgentName || lang.noAgentOption}" ${lang.agentConfiguredMessage}`, 'success');
+            showBanner(`"${newAgentName || lang.noAgentOption || 'No agent'}" ${lang.agentConfiguredMessage || 'configured for next chats.'}`, 'success');
             closePopup();
-
-            // Reload language after saving
             window.location.reload();
         });
     }
@@ -450,10 +483,9 @@
             const latestCommitDate = new Date(data[0].commit.committer.date);
             const lastCheckDateRaw = await GM.getValue('lastUpdateCheck', 0);
             const lastCheckDate = new Date(lastCheckDateRaw);
-
             if (latestCommitDate > lastCheckDate) {
                 const updateUrl = 'https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js';
-                showBanner(lang.updateAvailable, 'update', () => {
+                showBanner(lang.updateAvailable || 'Update available! Click to install.', 'update', () => {
                     window.open(updateUrl, '_blank');
                 });
                 await GM.setValue('lastUpdateCheck', Date.now());
@@ -483,13 +515,11 @@
     // Force click
     function forceClick(element) {
         if (!element) return;
-
         const reactKey = Object.keys(element).find(k =>
             k.startsWith('__reactProps') ||
             k.startsWith('__reactEventHandlers') ||
             k.startsWith('__reactFiber')
         );
-
         if (reactKey) {
             const props = element[reactKey];
             if (props?.onClick) {
@@ -503,7 +533,6 @@
                 return;
             }
         }
-
         try {
             element.focus();
             element.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
@@ -528,12 +557,10 @@
             logDebug('No agent configured.');
             return;
         }
-
         selectionInProgress = true;
         try {
             const btn = await waitFor('button[aria-label="Select agent"]');
             if (!btn) throw new Error('Button not found.');
-
             forceClick(btn);
             await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
 
@@ -545,7 +572,6 @@
                 await new Promise(resolve => setTimeout(resolve, settings.menuCheckInterval));
                 tries++;
             }
-
             if (!menu) throw new Error('Menu not found.');
 
             const agentItem = findAgentInMenu(menu);
@@ -555,17 +581,16 @@
                     .filter(name => name);
                 throw new Error(`Agent "${settings.agentName}" not found. Available: ${availableAgentsList.join(', ')}`);
             }
-
             forceClick(agentItem);
             selectionDone = true;
-            showBanner(`"${settings.agentName}" ${lang.agentSelectedMessage}`, 'success');
+            showBanner(`"${settings.agentName}" ${lang.agentSelectedMessage || 'selected for next chats!'}`, 'success');
         } catch (e) {
             logDebug(`Attempt ${attempt} failed: ${e.message}`);
             if (attempt < settings.maxAttempts) {
                 await new Promise(resolve => setTimeout(resolve, settings.attemptDelay));
                 await attemptAgentSelection(attempt + 1);
             } else {
-                showBanner(`${lang.failedAfterAttempts} ${settings.maxAttempts}.`, 'error');
+                showBanner(`${lang.failedAfterAttempts || 'Failed after'} ${settings.maxAttempts}.`, 'error');
             }
         } finally {
             selectionInProgress = false;
@@ -579,7 +604,6 @@
             logDebug('No agent defined, skipping automatic selection.');
             return;
         }
-
         const currentAgent = getCurrentlySelectedAgent();
         if (!currentAgent) {
             logDebug("New chat detected, selecting configured agent...");
@@ -588,19 +612,16 @@
             logDebug(`Agent "${currentAgent}" already selected. Configuration saved for next chats.`);
             selectionDone = true;
         }
-
         if (currentAgent && currentAgent !== settings.agentName) {
             logDebug(`Current agent "${currentAgent}" differs from "${settings.agentName}". Changing now...`);
             selectionDone = false;
         }
-
         selectionInProgress = true;
         try {
-            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.searchingButton}...`, 'waiting');
+            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.searchingButton || 'Searching for button'}...`, 'waiting');
             const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]');
             if (!btn) throw new Error('Select agent button not found.');
-
-            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.openingMenu}...`, 'waiting');
+            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.openingMenu || 'Opening menu'}...`, 'waiting');
             forceClick(btn);
             await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
 
@@ -613,10 +634,9 @@
                 if (tries === 3) forceClick(btn);
                 tries++;
             }
-
             if (!menu) throw new Error('Agent menu not found.');
 
-            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.searchingAgent} "${settings.agentName}"...`, 'waiting');
+            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.searchingAgent || 'Searching for'} "${settings.agentName}"...`, 'waiting');
             await new Promise(resolve => setTimeout(resolve, settings.preSelectionDelay));
 
             const agentItem = findAgentInMenu(menu);
@@ -627,17 +647,15 @@
                     .filter(name => name);
                 throw new Error(`Agent "${settings.agentName}" not found. Available agents: ${availableAgentsList.join(', ')}`);
             }
-
-            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.selectingAgent} "${settings.agentName}"...`, 'waiting');
+            showBanner(`${lang.attemptMessage || 'Attempt'} ${attempt}/${settings.maxAttempts}: ${lang.selectingAgent || 'Selecting'} "${settings.agentName}"...`, 'waiting');
             forceClick(agentItem);
 
             const cleanName = getCleanAgentName(agentItem);
             settings.agentName = cleanName;
             await GM.setValue('agentName', cleanName);
             logDebug(`Agent saved: ${cleanName}`);
-
             selectionDone = true;
-            showBanner(`"${settings.agentName}" ${lang.agentSelectedSuccessfully}!`, 'success');
+            showBanner(`"${settings.agentName}" ${lang.agentSelectedSuccessfully || 'selected successfully!'}!`, 'success');
         } catch (e) {
             selectionInProgress = false;
             logDebug(`Attempt ${attempt} failed: ${e.message}`);
@@ -645,7 +663,7 @@
                 await new Promise(resolve => setTimeout(resolve, settings.attemptDelay));
                 await selectAgent(attempt + 1);
             } else {
-                showBanner(`${lang.failedAfterAttempts} ${settings.maxAttempts}: ${e.message}`, 'error');
+                showBanner(`${lang.failedAfterAttempts || 'Failed after'} ${settings.maxAttempts}: ${e.message}`, 'error');
             }
         }
     }
@@ -654,18 +672,15 @@
     function start() {
         addSettingsButton();
         setTimeout(detectAvailableAgents, 2000);
-
         if (!settings.agentName || settings.agentName.trim() === "") {
             if (settings.showNoAgentBanner) {
                 showBanner("", "no-agent");
             }
         }
-
         if (!settings.agentName || settings.agentName.trim() === "") {
             logDebug("No agent configured. Automatic selection disabled.");
             return;
         }
-
         document.addEventListener('keydown', (e) => {
             if (e.shiftKey && e.key.toUpperCase() === 'M') {
                 e.preventDefault();
@@ -691,7 +706,6 @@
                     logDebug("No agent configured. Automatic selection disabled.");
                     return;
                 }
-
                 if (!currentAgentOnLoad) {
                     logDebug("New chat detected after load, attempting selection...");
                     setTimeout(selectAgent, settings.initialDelay);
@@ -723,7 +737,7 @@
         observer.observe(document.body, { childList: true, subtree: true });
 
         window.closePopup = closePopup;
-        GM.registerMenuCommand(lang.configureAgentMenu, openSettingsPopup);
+        GM.registerMenuCommand(lang.configureAgentMenu || 'Configure Mistral AI Agent', openSettingsPopup);
 
         setInterval(() => {
             if (!document.getElementById('mistralAgentBanner.no-agent') &&
