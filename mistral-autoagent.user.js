@@ -711,7 +711,7 @@
             return;
         }
         document.addEventListener('keydown', (e) => {
-            if (e.shiftKey && e.key.toUpperCase() === 'M') {
+            if (e.ctrllKey && e.key.toUpperCase() === 'M') {
                 e.preventDefault();
                 const popup = document.getElementById('mistralSettingsPopup');
                 popup ? closePopup() : openSettingsPopup();
