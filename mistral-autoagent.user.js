@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mistral AI - AutoAgent (Enhanced Version)
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      4.0
 // @description  Automatically selects and manages Mistral AI agents with smart re-selection logic
 // @author       EroiiKZz (enhanced by Nexus)
 // @match        https://chat.mistral.ai/chat
@@ -14,6 +14,9 @@
 // @connect      chat.mistral.ai
 // @connect      api.github.com
 // @connect      raw.githubusercontent.com
+// @resource     STYLES_URL https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/styles.css
+// @resource     LANG_FR https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/fr.json
+// @resource     LANG_EN https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json
 // @updateURL    https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js
 // @downloadURL  https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js
 // ==/UserScript==
@@ -40,340 +43,6 @@
         language: 'fr'
     };
 
-    // Language files (integrated)
-    const lang = {
-        fr: {
-            noAgentSelected: "Aucun agent sélectionné par défaut",
-            selectAgentPrompt: "Souhaitez-vous en sélectionner un maintenant ?",
-            yes: "Oui",
-            no: "Non",
-            disableBanner: "Ne plus afficher cette bannière",
-            settingsAriaLabel: "Ouvrir les paramètres Mistral AutoAgent",
-            settingsTitle: "Paramètres de l'Agent Mistral AI",
-            agentNameLabel: "Nom de l'Agent",
-            noAgentOption: "Aucun agent",
-            timingsSection: "Timings",
-            maxAttemptsLabel: "Tentatives maximales",
-            attemptDelayLabel: "Délai entre tentatives (ms)",
-            initialDelayLabel: "Délai initial (ms)",
-            menuCheckIntervalLabel: "Intervalle de vérification (ms)",
-            menuCheckMaxTriesLabel: "Tentatives max. pour le menu",
-            menuOpenDelayLabel: "Délai d'ouverture du menu (ms)",
-            preSelectionDelayLabel: "Délai de présélection (ms)",
-            generalSection: "Général",
-            showBannersLabel: "Afficher les bannières",
-            debugModeLabel: "Mode Debug",
-            showNoAgentBannerLabel: "Afficher la bannière 'Aucun agent sélectionné'",
-            languageLabel: "Langue",
-            cancelButton: "Annuler",
-            saveButton: "Sauvegarder",
-            settingsSaved: "Paramètres sauvegardés !",
-            agentConfiguredMessage: "configuré pour les prochains chats.",
-            updateAvailable: "Mise à jour disponible ! Cliquez pour installer.",
-            failedAfterAttempts: "Échec après",
-            attemptMessage: "Tentative",
-            searchingButton: "Recherche du bouton",
-            openingMenu: "Ouverture du menu",
-            searchingAgent: "Recherche de",
-            selectingAgent: "Sélection de",
-            agentSelectedMessage: "sélectionné pour les prochains chats !",
-            agentSelectedSuccessfully: "sélectionné avec succès !",
-            configureAgentMenu: "Configurer Mistral AI Agent"
-        },
-        en: {
-            noAgentSelected: "No default agent selected",
-            selectAgentPrompt: "Would you like to select one now?",
-            yes: "Yes",
-            no: "No",
-            disableBanner: "Do not show this banner again",
-            settingsAriaLabel: "Open Mistral AutoAgent settings",
-            settingsTitle: "Mistral AI Agent Settings",
-            agentNameLabel: "Agent Name",
-            noAgentOption: "No agent",
-            timingsSection: "Timings",
-            maxAttemptsLabel: "Max Attempts",
-            attemptDelayLabel: "Delay Between Attempts (ms)",
-            initialDelayLabel: "Initial Delay (ms)",
-            menuCheckIntervalLabel: "Check Interval (ms)",
-            menuCheckMaxTriesLabel: "Max Menu Check Attempts",
-            menuOpenDelayLabel: "Menu Open Delay (ms)",
-            preSelectionDelayLabel: "Pre-Selection Delay (ms)",
-            generalSection: "General",
-            showBannersLabel: "Show Banners",
-            debugModeLabel: "Debug Mode",
-            showNoAgentBannerLabel: "Show 'No Agent Selected' Banner",
-            languageLabel: "Language",
-            cancelButton: "Cancel",
-            saveButton: "Save",
-            settingsSaved: "Settings saved!",
-            agentConfiguredMessage: "configured for next chats.",
-            updateAvailable: "Update available! Click to install.",
-            failedAfterAttempts: "Failed after",
-            attemptMessage: "Attempt",
-            searchingButton: "Searching for button",
-            openingMenu: "Opening menu",
-            searchingAgent: "Searching for",
-            selectingAgent: "Selecting",
-            agentSelectedMessage: "selected for next chats!",
-            agentSelectedSuccessfully: "selected successfully!",
-            configureAgentMenu: "Configure Mistral AI Agent"
-        }
-    };
-
-    // CSS (integrated)
-    const styles = `
-        /* Banner styling */
-        #mistralAgentBanner {
-            position: fixed;
-            bottom: 1rem;
-            right: 5%;
-            background: var(--bg-state-brand);
-            color: var(--text-color-default);
-            text-align: center;
-            padding: 0.75rem 1rem;
-            z-index: 999999;
-            font-family: var(--font-sans);
-            box-shadow: var(--drop-shadow-md);
-            border-radius: var(--radius-md);
-            font-weight: var(--font-weight-medium);
-            border: 1px solid var(--bg-border-destructive);
-            max-width: 400px;
-            width: auto;
-            transition: opacity 0.3s ease-in-out;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        /* Icons based on type */
-        #mistralAgentBanner::before {
-            content: "✅";
-            color: var(--green-500);
-            font-weight: bold;
-        }
-        #mistralAgentBanner.error::before {
-            content: "⚠️";
-            color: var(--red-500);
-        }
-        #mistralAgentBanner.waiting::before {
-            content: "🔄";
-            color: var(--blue-500);
-        }
-        #mistralAgentBanner.update::before {
-            content: "📥";
-            color: var(--green-500);
-        }
-        #mistralAgentBanner.no-agent {
-            background: var(--bg-card);
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.75rem;
-            padding: 1rem;
-            text-align: left;
-        }
-        #mistralAgentBanner.no-agent::before {
-            display: none;
-        }
-        #mistralAgentBanner.no-agent .banner-buttons {
-            display: flex;
-            gap: 0.75rem;
-            margin-top: 0.5rem;
-            justify-content: center;
-        }
-        #mistralAgentBanner.no-agent button {
-            padding: 0.5rem 1rem;
-            border-radius: var(--radius-sm);
-            border: none;
-            cursor: pointer;
-            font-size: var(--text-sm);
-            font-weight: var(--font-weight-medium);
-        }
-        #mistralAgentBanner.no-agent .yes-btn {
-            background: var(--brand-500);
-            color: var(--zinc-00);
-        }
-        #mistralAgentBanner.no-agent .no-btn {
-            background: var(--background-color-input);
-            color: var(--text-color-default);
-            border: 1px solid var(--border-color-default);
-        }
-        #mistralAgentBanner.no-agent .disable-banner {
-            font-size: var(--text-xs);
-            color: var(--text-color-muted);
-            margin-top: 0.5rem;
-            cursor: pointer;
-            text-decoration: underline;
-            align-self: center;
-        }
-        /* Popup styling */
-        #mistralSettingsPopup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--background-color-card);
-            border-radius: var(--radius-card-md);
-            padding: 1.5rem;
-            z-index: 9999999;
-            box-shadow: var(--drop-shadow-xl);
-            width: 600px;
-            max-width: 95%;
-            font-family: var(--font-sans);
-            border: 1px solid var(--border-color-default);
-            animation: fadeIn 0.2s ease-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translate(-50%, -40%); }
-            to { opacity: 1; transform: translate(-50%, -50%); }
-        }
-        #mistralSettingsPopup .popup-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.25rem;
-            border-bottom: 1px solid var(--border-color-default);
-            padding-bottom: 0.75rem;
-        }
-        #mistralSettingsPopup .popup-header h2 {
-            margin: 0;
-            color: var(--text-color-default);
-            font-size: var(--text-lg);
-            font-weight: var(--font-weight-semibold);
-        }
-        #mistralSettingsPopup .close-btn {
-            background: none;
-            border: none;
-            font-size: 1.3rem;
-            cursor: pointer;
-            color: var(--text-color-muted);
-            transition: color 0.2s;
-        }
-        #mistralSettingsPopup .close-btn:hover {
-            color: var(--text-color-default);
-        }
-        #mistralSettingsPopup .popup-body {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-        #mistralSettingsPopup .section {
-            border: 1px solid var(--border-color-default);
-            border-radius: var(--radius-sm);
-            padding: 0.75rem;
-        }
-        #mistralSettingsPopup .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-            margin-bottom: 0.5rem;
-        }
-        #mistralSettingsPopup .section-header h3 {
-            margin: 0;
-            color: var(--text-color-default);
-            font-size: var(--text-sm);
-            font-weight: var(--font-weight-medium);
-        }
-        #mistralSettingsPopup .section-header .chevron {
-            transition: transform 0.2s;
-        }
-        #mistralSettingsPopup .section-header.collapsed .chevron {
-            transform: rotate(-90deg);
-        }
-        #mistralSettingsPopup .section-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-        #mistralSettingsPopup .section-content.hidden {
-            display: none;
-        }
-        #mistralSettingsPopup .full-width {
-            grid-column: 1 / -1;
-        }
-        #mistralSettingsPopup label {
-            display: block;
-            color: var(--text-color-default);
-            font-weight: var(--font-weight-medium);
-            font-size: var(--text-sm);
-            margin-bottom: 0.375rem;
-        }
-        #mistralSettingsPopup .checkbox-container {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-        }
-        #mistralSettingsPopup .checkbox-container input[type="checkbox"] {
-            margin: 0;
-        }
-        #mistralSettingsPopup input:not([type="checkbox"]),
-        #mistralSettingsPopup select {
-            width: 100%;
-            padding: 0.625rem 0.75rem;
-            background: var(--background-color-input);
-            border: 1px solid var(--border-color-default);
-            border-radius: var(--radius-sm);
-            font-size: var(--text-sm);
-            transition: border-color 0.2s, box-shadow 0.2s;
-            box-sizing: border-box;
-            color: var(--text-color-default);
-        }
-        #mistralSettingsPopup input:focus:not([type="checkbox"]),
-        #mistralSettingsPopup select:focus {
-            outline: none;
-            border-color: var(--brand-500);
-            box-shadow: 0 0 0 3px var(--transparent-brand-20);
-        }
-        #mistralSettingsPopup .popup-footer {
-            display: flex;
-            justify-content: flex-end;
-            gap: 0.625rem;
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border-color-default);
-        }
-        #mistralSettingsPopup button {
-            padding: 0.625rem 1rem;
-            border-radius: var(--radius-sm);
-            font-weight: var(--font-weight-medium);
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: var(--text-sm);
-        }
-        #mistralSettingsPopup .save-btn {
-            background: var(--brand-500);
-            color: var(--zinc-00);
-            border: none;
-        }
-        #mistralSettingsPopup .save-btn:hover {
-            background: var(--brand-600);
-        }
-        #mistralSettingsPopup .cancel-btn {
-            background: var(--background-color-input);
-            color: var(--text-color-default);
-            border: 1px solid var(--border-color-default);
-        }
-        #mistralSettingsPopup .cancel-btn:hover {
-            background: var(--background-color-input-soft);
-        }
-        .popup-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: var(--transparent-dark-30);
-            z-index: 9999998;
-            backdrop-filter: blur(4px);
-            animation: fadeInOverlay 0.2s ease-out;
-        }
-        @keyframes fadeInOverlay {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-    `;
-
     // Load settings asynchronously
     let settings = {};
     for (const key of Object.keys(defaultSettings)) {
@@ -388,7 +57,19 @@
         settings[key] = stored;
     }
 
-    // Apply dynamic styles
+    // Load language file
+    let lang = {};
+    try {
+        const langResource = await GM.getResource(settings.language === 'fr' ? 'LANG_FR' : 'LANG_EN');
+        lang = JSON.parse(langResource);
+    } catch (e) {
+        console.error('Failed to load language file, falling back to English.');
+        const fallbackLangResource = await GM.getResource('LANG_EN');
+        lang = JSON.parse(fallbackLangResource);
+    }
+
+    // Load CSS
+    const styles = await GM.getResourceText('STYLES_URL');
     GM.addStyle(styles);
 
     // State variables
@@ -418,13 +99,13 @@
 
         if (type === 'no-agent') {
             banner.innerHTML = `
-                <div>${lang[settings.language].noAgentSelected}</div>
-                <div style="font-size: 0.875rem; margin-top: 0.25rem;">${lang[settings.language].selectAgentPrompt}</div>
+                <div>${lang.noAgentSelected}</div>
+                <div style="font-size: 0.875rem; margin-top: 0.25rem;">${lang.selectAgentPrompt}</div>
                 <div class="banner-buttons">
-                    <button class="yes-btn" id="selectAgentYes">${lang[settings.language].yes}</button>
-                    <button class="no-btn" id="selectAgentNo">${lang[settings.language].no}</button>
+                    <button class="yes-btn" id="selectAgentYes">${lang.yes}</button>
+                    <button class="no-btn" id="selectAgentNo">${lang.no}</button>
                 </div>
-                <div class="disable-banner" id="disableNoAgentBanner">${lang[settings.language].disableBanner}</div>
+                <div class="disable-banner" id="disableNoAgentBanner">${lang.disableBanner}</div>
             `;
         } else {
             banner.textContent = message;
@@ -466,7 +147,7 @@
                 const settingsButton = document.createElement('button');
                 settingsButton.type = 'button';
                 settingsButton.id = 'mistralSettingsButton';
-                settingsButton.setAttribute('aria-label', lang[settings.language].settingsAriaLabel);
+                settingsButton.setAttribute('aria-label', lang.settingsAriaLabel);
                 settingsButton.className = 'flex items-center justify-center rounded-full border border-default bg-state-brand p-1 text-muted shadow-xl transition-colors hover:bg-muted focus-visible:outline-hidden dark:border-transparent';
                 settingsButton.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings size-4" aria-hidden="true">
@@ -500,7 +181,7 @@
                 showBanner("", "no-agent");
             }
         }
-        showBanner(lang[settings.language].settingsSaved, 'success');
+        showBanner(lang.settingsSaved, 'success');
         logDebug('Settings saved: ' + JSON.stringify(newSettings));
     }
 
@@ -632,15 +313,15 @@
         popup.id = 'mistralSettingsPopup';
         popup.innerHTML = `
             <div class="popup-header">
-                <h2>${lang[settings.language].settingsTitle}</h2>
+                <h2>${lang.settingsTitle}</h2>
                 <button class="close-btn" id="closePopupBtn">×</button>
             </div>
             <div class="popup-body">
                 <div class="section">
                     <div class="section-content full-width">
-                        <label for="agentName">${lang[settings.language].agentNameLabel}</label>
+                        <label for="agentName">${lang.agentNameLabel}</label>
                         <select id="agentName">
-                            <option value="" ${!settings.agentName ? 'selected' : ''}>${lang[settings.language].noAgentOption}</option>
+                            <option value="" ${!settings.agentName ? 'selected' : ''}>${lang.noAgentOption}</option>
                             ${availableAgents.map(agent => `
                                 <option value="${agent}" ${settings.agentName === agent ? 'selected' : ''}>${agent}</option>
                             `).join('')}
@@ -649,60 +330,60 @@
                 </div>
                 <div class="section">
                     <div class="section-header">
-                        <h3>${lang[settings.language].timingsSection}</h3>
+                        <h3>${lang.timingsSection}</h3>
                         <span class="chevron">▼</span>
                     </div>
                     <div class="section-content">
                         <div>
-                            <label for="maxAttempts">${lang[settings.language].maxAttemptsLabel}</label>
+                            <label for="maxAttempts">${lang.maxAttemptsLabel}</label>
                             <input type="number" id="maxAttempts" value="${settings.maxAttempts}" min="1" max="10">
                         </div>
                         <div>
-                            <label for="attemptDelay">${lang[settings.language].attemptDelayLabel}</label>
+                            <label for="attemptDelay">${lang.attemptDelayLabel}</label>
                             <input type="number" id="attemptDelay" value="${settings.attemptDelay}" min="100" max="10000">
                         </div>
                         <div>
-                            <label for="initialDelay">${lang[settings.language].initialDelayLabel}</label>
+                            <label for="initialDelay">${lang.initialDelayLabel}</label>
                             <input type="number" id="initialDelay" value="${settings.initialDelay}" min="100" max="10000">
                         </div>
                         <div>
-                            <label for="menuCheckInterval">${lang[settings.language].menuCheckIntervalLabel}</label>
+                            <label for="menuCheckInterval">${lang.menuCheckIntervalLabel}</label>
                             <input type="number" id="menuCheckInterval" value="${settings.menuCheckInterval}" min="50" max="5000">
                         </div>
                         <div>
-                            <label for="menuCheckMaxTries">${lang[settings.language].menuCheckMaxTriesLabel}</label>
+                            <label for="menuCheckMaxTries">${lang.menuCheckMaxTriesLabel}</label>
                             <input type="number" id="menuCheckMaxTries" value="${settings.menuCheckMaxTries}" min="1" max="50">
                         </div>
                         <div>
-                            <label for="menuOpenDelay">${lang[settings.language].menuOpenDelayLabel}</label>
+                            <label for="menuOpenDelay">${lang.menuOpenDelayLabel}</label>
                             <input type="number" id="menuOpenDelay" value="${settings.menuOpenDelay}" min="100" max="5000">
                         </div>
                         <div>
-                            <label for="preSelectionDelay">${lang[settings.language].preSelectionDelayLabel}</label>
+                            <label for="preSelectionDelay">${lang.preSelectionDelayLabel}</label>
                             <input type="number" id="preSelectionDelay" value="${settings.preSelectionDelay}" min="50" max="5000">
                         </div>
                     </div>
                 </div>
                 <div class="section">
                     <div class="section-header">
-                        <h3>${lang[settings.language].generalSection}</h3>
+                        <h3>${lang.generalSection}</h3>
                         <span class="chevron">▼</span>
                     </div>
                     <div class="section-content">
                         <div class="checkbox-container full-width">
                             <input type="checkbox" id="showBanners" ${settings.showBanners ? 'checked' : ''}>
-                            <label for="showBanners">${lang[settings.language].showBannersLabel}</label>
+                            <label for="showBanners">${lang.showBannersLabel}</label>
                         </div>
                         <div class="checkbox-container full-width">
                             <input type="checkbox" id="debugMode" ${settings.debugMode ? 'checked' : ''}>
-                            <label for="debugMode">${lang[settings.language].debugModeLabel}</label>
+                            <label for="debugMode">${lang.debugModeLabel}</label>
                         </div>
                         <div class="checkbox-container full-width">
                             <input type="checkbox" id="showNoAgentBanner" ${settings.showNoAgentBanner ? 'checked' : ''}>
-                            <label for="showNoAgentBanner">${lang[settings.language].showNoAgentBannerLabel}</label>
+                            <label for="showNoAgentBanner">${lang.showNoAgentBannerLabel}</label>
                         </div>
                         <div class="full-width">
-                            <label for="language">${lang[settings.language].languageLabel}</label>
+                            <label for="language">${lang.languageLabel}</label>
                             <select id="language">
                                 <option value="fr" ${settings.language === 'fr' ? 'selected' : ''}>Français</option>
                                 <option value="en" ${settings.language === 'en' ? 'selected' : ''}>English</option>
@@ -712,8 +393,8 @@
                 </div>
             </div>
             <div class="popup-footer">
-                <button class="cancel-btn" id="cancelSettingsBtn">${lang[settings.language].cancelButton}</button>
-                <button class="save-btn" id="saveSettingsBtn">${lang[settings.language].saveButton}</button>
+                <button class="cancel-btn" id="cancelSettingsBtn">${lang.cancelButton}</button>
+                <button class="save-btn" id="saveSettingsBtn">${lang.saveButton}</button>
             </div>
         `;
         document.body.appendChild(popup);
@@ -752,10 +433,10 @@
             };
 
             await saveSettings(newSettings);
-            showBanner(`"${newAgentName || lang[newLanguage].noAgentOption}" ${lang[newLanguage].agentConfiguredMessage}`, 'success');
+            showBanner(`"${newAgentName || lang.noAgentOption}" ${lang.agentConfiguredMessage}`, 'success');
             closePopup();
 
-            // Reload to apply language changes
+            // Reload language after saving
             window.location.reload();
         });
     }
@@ -772,7 +453,7 @@
 
             if (latestCommitDate > lastCheckDate) {
                 const updateUrl = 'https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js';
-                showBanner(lang[settings.language].updateAvailable, 'update', () => {
+                showBanner(lang.updateAvailable, 'update', () => {
                     window.open(updateUrl, '_blank');
                 });
                 await GM.setValue('lastUpdateCheck', Date.now());
@@ -877,14 +558,14 @@
 
             forceClick(agentItem);
             selectionDone = true;
-            showBanner(`"${settings.agentName}" ${lang[settings.language].agentSelectedMessage}`, 'success');
+            showBanner(`"${settings.agentName}" ${lang.agentSelectedMessage}`, 'success');
         } catch (e) {
             logDebug(`Attempt ${attempt} failed: ${e.message}`);
             if (attempt < settings.maxAttempts) {
                 await new Promise(resolve => setTimeout(resolve, settings.attemptDelay));
                 await attemptAgentSelection(attempt + 1);
             } else {
-                showBanner(`${lang[settings.language].failedAfterAttempts} ${settings.maxAttempts}.`, 'error');
+                showBanner(`${lang.failedAfterAttempts} ${settings.maxAttempts}.`, 'error');
             }
         } finally {
             selectionInProgress = false;
@@ -915,11 +596,11 @@
 
         selectionInProgress = true;
         try {
-            showBanner(`${lang[settings.language].attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang[settings.language].searchingButton}...`, 'waiting');
+            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.searchingButton}...`, 'waiting');
             const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]');
             if (!btn) throw new Error('Select agent button not found.');
 
-            showBanner(`${lang[settings.language].attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang[settings.language].openingMenu}...`, 'waiting');
+            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.openingMenu}...`, 'waiting');
             forceClick(btn);
             await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
 
@@ -935,7 +616,7 @@
 
             if (!menu) throw new Error('Agent menu not found.');
 
-            showBanner(`${lang[settings.language].attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang[settings.language].searchingAgent} "${settings.agentName}"...`, 'waiting');
+            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.searchingAgent} "${settings.agentName}"...`, 'waiting');
             await new Promise(resolve => setTimeout(resolve, settings.preSelectionDelay));
 
             const agentItem = findAgentInMenu(menu);
@@ -947,7 +628,7 @@
                 throw new Error(`Agent "${settings.agentName}" not found. Available agents: ${availableAgentsList.join(', ')}`);
             }
 
-            showBanner(`${lang[settings.language].attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang[settings.language].selectingAgent} "${settings.agentName}"...`, 'waiting');
+            showBanner(`${lang.attemptMessage} ${attempt}/${settings.maxAttempts}: ${lang.selectingAgent} "${settings.agentName}"...`, 'waiting');
             forceClick(agentItem);
 
             const cleanName = getCleanAgentName(agentItem);
@@ -956,7 +637,7 @@
             logDebug(`Agent saved: ${cleanName}`);
 
             selectionDone = true;
-            showBanner(`"${settings.agentName}" ${lang[settings.language].agentSelectedSuccessfully}!`, 'success');
+            showBanner(`"${settings.agentName}" ${lang.agentSelectedSuccessfully}!`, 'success');
         } catch (e) {
             selectionInProgress = false;
             logDebug(`Attempt ${attempt} failed: ${e.message}`);
@@ -964,7 +645,7 @@
                 await new Promise(resolve => setTimeout(resolve, settings.attemptDelay));
                 await selectAgent(attempt + 1);
             } else {
-                showBanner(`${lang[settings.language].failedAfterAttempts} ${settings.maxAttempts}: ${e.message}`, 'error');
+                showBanner(`${lang.failedAfterAttempts} ${settings.maxAttempts}: ${e.message}`, 'error');
             }
         }
     }
@@ -1042,7 +723,7 @@
         observer.observe(document.body, { childList: true, subtree: true });
 
         window.closePopup = closePopup;
-        GM.registerMenuCommand(lang[settings.language].configureAgentMenu, openSettingsPopup);
+        GM.registerMenuCommand(lang.configureAgentMenu, openSettingsPopup);
 
         setInterval(() => {
             if (!document.getElementById('mistralAgentBanner.no-agent') &&
