@@ -217,16 +217,31 @@
 
     // Save settings
     async function saveSettings(newSettings) {
+        const languageChanged = newSettings.language && newSettings.language !== settings.language;
+
         for (const [key, value] of Object.entries(newSettings)) {
             await GM.setValue(key, typeof value === 'object' ? JSON.stringify(value) : value);
         }
+
         Object.assign(settings, newSettings);
+
+        // Recharger le fichier de langue si nécessaire
+        if (languageChanged) {
+            lang = await loadLanguageFile(settings.language);
+            showBanner(lang.settingsSaved || 'Settings saved!', 'success');
+            // Optionnel : recharger la popup pour appliquer la nouvelle langue
+            closePopup();
+            setTimeout(() => openSettingsPopup(), 500);
+        } else {
+            showBanner(lang.settingsSaved || 'Settings saved!', 'success');
+        }
+
         if (!settings.agentName || settings.agentName.trim() === "") {
             if (settings.showNoAgentBanner) {
                 showBanner("", "no-agent");
             }
         }
-        showBanner(lang.settingsSaved || 'Settings saved!', 'success');
+
         logDebug('Settings saved: ' + JSON.stringify(newSettings));
     }
 
