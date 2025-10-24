@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mistral AI - AutoAgent (Enhanced Version)
 // @namespace    http://tampermonkey.net/
-// @version      4.4
+// @version      4.5
 // @description  Automatically selects and manages Mistral AI agents with smart re-selection logic
 // @author       EroiiKZz
 // @match        https://chat.mistral.ai/chat*
@@ -701,19 +701,41 @@
         }
     }
 
-    // Start script
+    /// Start script
     function start() {
         addSettingsButton();
         setTimeout(detectAvailableAgents, 500);
 
-        if (!settings.agentName || settings.agentName.trim() === "") {
-            if (settings.showNoAgentBanner) {
-                showBanner("", "no-agent");
-            }
-        }
+        const agentMenuObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList' && !selectionInProgress) {
+                    const menu = findAgentMenu();
+                    if (menu) {
+                        const items = menu.querySelectorAll('[cmdk-item], [role="option"], [role="menuitem"]');
+                        if (items.length > 0) {
+                            const newAgents = Array.from(items)
+                                .map(item => getCleanAgentName(item))
+                                .filter(name => name && !name.toLowerCase().includes('select') && !name.toLowerCase().includes('choisir'));
+                            const uniqueNewAgents = newAgents.filter(agent => !availableAgents.includes(agent));
+                            if (uniqueNewAgents.length > 0) {
+                                availableAgents = [...new Set([...availableAgents, ...uniqueNewAgents])];
+                                settings.availableAgents = availableAgents;
+                                GM.setValue('availableAgents', JSON.stringify(availableAgents));
+                                logDebug(`Passively detected new agents: ${uniqueNewAgents.join(', ')}`);
+                            }
+                        }
+                    }
+                }
+            });
+        });
+        agentMenuObserver.observe(document.body, { childList: true, subtree: true });
+
 
         if (!settings.agentName || settings.agentName.trim() === "") {
             logDebug("No agent configured. Automatic selection disabled.");
+            if (settings.showNoAgentBanner) {
+                showBanner("", "no-agent");
+            }
             return;
         }
 
@@ -725,8 +747,8 @@
             }
         });
 
-        const currentAgent = getCurrentlySelectedAgent();
-        if (document.readyState === 'complete') {
+        const handlePageLoad = () => {
+            const currentAgent = getCurrentlySelectedAgent();
             if (!currentAgent) {
                 logDebug("New chat detected, attempting to select configured agent...");
                 setTimeout(selectAgent, settings.initialDelay);
@@ -735,23 +757,12 @@
                 selectionDone = true;
             }
             setTimeout(checkForUpdates, 10000);
-        } else {
-            window.addEventListener('load', () => {
-                const currentAgentOnLoad = getCurrentlySelectedAgent();
-                if (!settings.agentName || settings.agentName.trim() === "") {
-                    logDebug("No agent configured. Automatic selection disabled.");
-                    return;
-                }
+        };
 
-                if (!currentAgentOnLoad) {
-                    logDebug("New chat detected after load, attempting selection...");
-                    setTimeout(selectAgent, settings.initialDelay);
-                } else {
-                    logDebug(`Agent "${currentAgentOnLoad}" already active. Ready for next chats.`);
-                    selectionDone = true;
-                }
-                setTimeout(checkForUpdates, 10000);
-            });
+        if (document.readyState === 'complete') {
+            handlePageLoad();
+        } else {
+            window.addEventListener('load', handlePageLoad);
         }
 
         const observer = new MutationObserver((mutations) => {
@@ -777,11 +788,10 @@
                 }
             });
         });
-
         observer.observe(document.body, { childList: true, subtree: true });
-        window.closePopup = closePopup;
-        GM.registerMenuCommand(lang.configureAgentMenu || 'Configure Mistral AI Agent', openSettingsPopup);
 
+        window.closePopup = closePopup;
+        GM.registerMenuCommand(lang.configureAgentMenu || 'Configure Mistral AI Agent', openSettingsPopup);   
         setInterval(() => {
             if (!document.getElementById('mistralAgentBanner.no-agent') &&
                 !settings.agentName &&
@@ -790,6 +800,5 @@
             }
         }, 5000);
     }
-
     start();
 })();
