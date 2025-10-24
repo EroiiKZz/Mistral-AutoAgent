@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mistral AI - AutoAgent (Enhanced Version)
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      4.7
 // @description  Automatically selects and manages Mistral AI agents with smart re-selection logic
 // @author       EroiiKZz
 // @match        https://chat.mistral.ai/chat*
