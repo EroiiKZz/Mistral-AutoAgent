@@ -51,22 +51,22 @@
                 stored = defaultSettings[key];
             }
         }
-        // Correction pour 'language'
+        // Fix for 'language' setting
         if (key === 'language') {
             if (typeof stored !== 'string' || !['fr', 'en'].includes(stored)) {
                 stored = defaultSettings[key];
-                await GM.setValue(key, stored); // Réinitialise si invalide
+                await GM.setValue(key, stored);
             }
         }
         settings[key] = stored;
     }
-
 
     // Load language file using GM.xmlHttpRequest
     async function loadLanguageFile(langCode) {
         const url = langCode === 'fr'
             ? "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/fr.json"
             : "https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/lang/en.json";
+
         return new Promise((resolve) => {
             GM.xmlHttpRequest({
                 method: "GET",
@@ -76,7 +76,7 @@
                         resolve(JSON.parse(response.responseText));
                     } catch {
                         console.error('Failed to parse language file, falling back to English.');
-                        resolve({}); // Retourne un objet vide en cas d'échec
+                        resolve({});
                     }
                 },
                 onerror: () => {
@@ -86,7 +86,6 @@
             });
         });
     }
-
 
     // Load CSS using GM.xmlHttpRequest
     async function loadCSS() {
@@ -100,13 +99,13 @@
                 },
                 onerror: function () {
                     console.error('Failed to load CSS.');
-                    resolve(); // Continue même sans CSS
+                    resolve();
                 }
             });
         });
     }
 
-    // Charge les ressources
+    // Load resources
     let lang = await loadLanguageFile(settings.language);
     await loadCSS();
 
@@ -211,14 +210,13 @@
     async function saveSettings(newSettings) {
         const languageChanged = newSettings.language && newSettings.language !== settings.language;
         for (const [key, value] of Object.entries(newSettings)) {
-            await GM.setValue(key, value); // Pas de JSON.stringify pour les chaînes
+            await GM.setValue(key, value);
         }
         Object.assign(settings, newSettings);
 
         if (languageChanged) {
             lang = await loadLanguageFile(settings.language);
             showBanner(lang.settingsSaved || 'Settings saved!', 'success');
-            // Fermer et rouvrir la popup pour appliquer la langue
             if (document.getElementById('mistralSettingsPopup')) {
                 closePopup();
                 setTimeout(openSettingsPopup, 100);
@@ -227,7 +225,6 @@
             showBanner(lang.settingsSaved || 'Settings saved!', 'success');
         }
     }
-
 
     // Close popup
     function closePopup() {
@@ -302,7 +299,7 @@
                 return;
             }
 
-            // 1. Ouvrir le menu
+            // 1. Open the menu
             const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]', 10000);
             if (!btn) {
                 logDebug("Select agent button not found.");
@@ -310,7 +307,7 @@
             }
             forceClick(btn);
 
-            // 2. Attendre que le menu s'ouvre
+            // 2. Wait for the menu to open
             await new Promise(r => setTimeout(r, settings.menuOpenDelay));
 
             let menu = null;
@@ -327,7 +324,7 @@
                 return;
             }
 
-            // 3. Récupérer la liste des agents
+            // 3. Get the list of agents
             const items = menu.querySelectorAll('[cmdk-item], [role="option"], [role="menuitem"]');
             const agents = Array.from(items)
                 .map(item => getCleanAgentName(item))
@@ -340,7 +337,7 @@
                 logDebug(`Detected agents: ${availableAgents.join(', ')}`);
             }
 
-            // 4. Refermer le menu immédiatement
+            // 4. Close the menu immediately
             forceClick(btn);
             logDebug("Agent menu closed after detection.");
         } catch (e) {
@@ -353,15 +350,15 @@
                 display: none !important;
             }
         `;
-                document.head.appendChild(style);
-                style.remove();
-            }
-
+        document.head.appendChild(style);
+        style.remove();
+    }
 
     // Open settings popup
     function openSettingsPopup() {
         const existingPopup = document.getElementById('mistralSettingsPopup');
         if (existingPopup) existingPopup.remove();
+
         const existingOverlay = document.querySelector('.popup-overlay');
         if (existingOverlay) existingOverlay.remove();
 
@@ -458,7 +455,6 @@
                 <button class="save-btn" id="saveSettingsBtn">${lang.saveButton || 'Save'}</button>
             </div>
         `;
-
         document.body.appendChild(popup);
 
         // Toggle sections
@@ -506,6 +502,7 @@
             const latestCommitDate = new Date(data[0].commit.committer.date);
             const lastCheckDateRaw = await GM.getValue('lastUpdateCheck', 0);
             const lastCheckDate = new Date(lastCheckDateRaw);
+
             if (latestCommitDate > lastCheckDate) {
                 const updateUrl = 'https://raw.githubusercontent.com/EroiiKZz/Mistral-AutoAgent/main/mistral-autoagent.user.js';
                 showBanner(lang.updateAvailable || 'Update available! Click to install.', 'update', () => {
@@ -538,11 +535,13 @@
     // Force click
     function forceClick(element) {
         if (!element) return;
+
         const reactKey = Object.keys(element).find(k =>
             k.startsWith('__reactProps') ||
             k.startsWith('__reactEventHandlers') ||
             k.startsWith('__reactFiber')
         );
+
         if (reactKey) {
             const props = element[reactKey];
             if (props?.onClick) {
@@ -556,6 +555,7 @@
                 return;
             }
         }
+
         try {
             element.focus();
             element.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
@@ -593,6 +593,7 @@
         try {
             const btn = await waitFor('button[aria-label="Select agent"]', 10000);
             if (!btn) throw new Error('Button not found.');
+
             forceClick(btn);
             await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
 
@@ -604,6 +605,7 @@
                 await new Promise(resolve => setTimeout(resolve, settings.menuCheckInterval));
                 tries++;
             }
+
             if (!menu) throw new Error('Menu not found.');
 
             const agentItem = findAgentInMenu(menu);
@@ -613,6 +615,7 @@
                     .filter(name => name);
                 throw new Error(`Agent "${settings.agentName}" not found. Available: ${availableAgentsList.join(', ')}`);
             }
+
             forceClick(agentItem);
             selectionDone = true;
             showBanner(`"${settings.agentName}" ${lang.agentSelectedMessage || 'selected for next chats!'}`, 'success');
@@ -629,30 +632,30 @@
         }
     }
 
-
     // Select agent
     async function selectAgent(attempt = 1) {
         if (selectionInProgress) return;
+
         if (!settings.agentName || settings.agentName.trim() === '') {
             logDebug('No agent defined, skipping automatic selection.');
             return;
         }
 
-        // Vérifie si un chat est déjà actif (par exemple, s'il y a des messages)
+        // Check if a chat is already active
         const chatMessages = document.querySelectorAll('[data-testid="chat-message"]');
         const isChatActive = chatMessages.length > 0;
-
         const currentAgent = getCurrentlySelectedAgent();
+
         if (!currentAgent) {
             logDebug("New chat detected, selecting configured agent...");
             await attemptAgentSelection(attempt);
         } else if (currentAgent !== settings.agentName && !isChatActive) {
-            // Ne change l'agent que si aucun message n'a été envoyé dans ce chat
             logDebug(`No active chat, updating agent to "${settings.agentName}" for next chats.`);
             selectionInProgress = true;
             try {
                 const btn = await waitFor('button[aria-label="Select agent"], button[aria-label="Choose agent"]', 10000);
                 if (!btn) throw new Error('Select agent button not found.');
+
                 forceClick(btn);
                 await new Promise(resolve => setTimeout(resolve, settings.menuOpenDelay));
 
@@ -664,6 +667,7 @@
                     await new Promise(resolve => setTimeout(resolve, settings.menuCheckInterval));
                     tries++;
                 }
+
                 if (!menu) throw new Error('Agent menu not found.');
 
                 const agentItem = findAgentInMenu(menu);
@@ -673,6 +677,7 @@
                         .filter(name => name);
                     throw new Error(`Agent "${settings.agentName}" not found. Available: ${availableAgentsList.join(', ')}`);
                 }
+
                 forceClick(agentItem);
                 const cleanName = getCleanAgentName(agentItem);
                 settings.agentName = cleanName;
@@ -696,22 +701,24 @@
         }
     }
 
-
     // Start script
     function start() {
         addSettingsButton();
         setTimeout(detectAvailableAgents, 500);
+
         if (!settings.agentName || settings.agentName.trim() === "") {
             if (settings.showNoAgentBanner) {
                 showBanner("", "no-agent");
             }
         }
+
         if (!settings.agentName || settings.agentName.trim() === "") {
             logDebug("No agent configured. Automatic selection disabled.");
             return;
         }
+
         document.addEventListener('keydown', (e) => {
-            if (e.ctrllKey && e.key.toUpperCase() === 'M') {
+            if (e.ctrlKey && e.key.toUpperCase() === 'M') {
                 e.preventDefault();
                 const popup = document.getElementById('mistralSettingsPopup');
                 popup ? closePopup() : openSettingsPopup();
@@ -735,6 +742,7 @@
                     logDebug("No agent configured. Automatic selection disabled.");
                     return;
                 }
+
                 if (!currentAgentOnLoad) {
                     logDebug("New chat detected after load, attempting selection...");
                     setTimeout(selectAgent, settings.initialDelay);
@@ -769,8 +777,8 @@
                 }
             });
         });
-        observer.observe(document.body, { childList: true, subtree: true });
 
+        observer.observe(document.body, { childList: true, subtree: true });
         window.closePopup = closePopup;
         GM.registerMenuCommand(lang.configureAgentMenu || 'Configure Mistral AI Agent', openSettingsPopup);
 
